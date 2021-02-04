@@ -15,6 +15,7 @@ import (
 
 // TODO
 // - Add a stream-only reader function that does not require Seeker, traverses the archive just once
+// - Consider a breadth-first traversal option, that could be better for tipset-blockchains like Filecoin
 
 // Reader reads IPLD blocks from an archive file.
 //

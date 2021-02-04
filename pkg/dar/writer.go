@@ -107,7 +107,7 @@ func NewWriter(iow io.Writer, index bool) (*Writer, error) {
 // of this or a subsequent DAG.
 // Returns the links discovered in this node, in order, which are eligible to be
 // written next.
-func (wr *Writer) BeginDAG(ctx context.Context, rootBlock ipld.Node, enc cid.Prefix) (cidlink.Link, []cidlink.Link, error) {
+func (wr *Writer) BeginDAGNode(ctx context.Context, rootBlock ipld.Node, enc cid.Prefix) (cidlink.Link, []cidlink.Link, error) {
 	if err := wr.checkOpen(); err != nil {
 		return cidlink.Link{}, nil, err
 	}
@@ -117,8 +117,20 @@ func (wr *Writer) BeginDAG(ctx context.Context, rootBlock ipld.Node, enc cid.Pre
 	if err != nil {
 		return cidlink.Link{}, nil, err
 	}
-
 	return link, links, nil
+}
+
+func (wr *Writer) BeginDAGBlock(ctx context.Context, link cidlink.Link, data []byte) ([]cidlink.Link, error) {
+	if err := wr.checkOpen(); err != nil {
+		return nil, err
+	}
+
+	// Write the block.
+	links, err := wr.appendRawBlock(ctx, link, data, true)
+	if err != nil {
+		return nil, err
+	}
+	return links, nil
 }
 
 // Appends a block to the archive.
@@ -128,7 +140,7 @@ func (wr *Writer) BeginDAG(ctx context.Context, rootBlock ipld.Node, enc cid.Pre
 // TODO: more docs about this
 // - if block has been written previously, no links will be returned. decision about what sub-dag to write
 //   must have been made the first time.
-func (wr *Writer) AppendBlock(ctx context.Context, block ipld.Node, enc cid.Prefix) (cidlink.Link, []cidlink.Link, error) {
+func (wr *Writer) AppendNode(ctx context.Context, block ipld.Node, enc cid.Prefix) (cidlink.Link, []cidlink.Link, error) {
 	if err := wr.checkOpen(); err != nil {
 		return cidlink.Link{}, nil, err
 	}
@@ -136,7 +148,7 @@ func (wr *Writer) AppendBlock(ctx context.Context, block ipld.Node, enc cid.Pref
 	return wr.appendBlock(ctx, block, enc, false)
 }
 
-func (wr *Writer) AppendRawBlock(ctx context.Context, link cidlink.Link, data []byte) ([]cidlink.Link, error) {
+func (wr *Writer) AppendBlock(ctx context.Context, link cidlink.Link, data []byte) ([]cidlink.Link, error) {
 	if err := wr.checkOpen(); err != nil {
 		return nil, err
 	}

@@ -65,7 +65,7 @@ func TestNodes(t *testing.T) {
 
 	t.Run("singleton scalar", func(t *testing.T) {
 		buf, wr := bufWriter(t)
-		root, links, err := wr.BeginDAG(ctx, aScalar, encSpec)
+		root, links, err := wr.BeginDAGNode(ctx, aScalar, encSpec)
 		require.NoError(t, err)
 		assert.True(t, root.Cid.Defined())
 		assert.Equal(t, uint64(1), root.Cid.Version())
@@ -85,7 +85,7 @@ func TestNodes(t *testing.T) {
 
 	t.Run("singleton node", func(t *testing.T) {
 		buf, wr := bufWriter(t)
-		root, links, err := wr.BeginDAG(ctx, aNode, encSpec)
+		root, links, err := wr.BeginDAGNode(ctx, aNode, encSpec)
 		require.NoError(t, err)
 		assert.True(t, root.Cid.Defined())
 		assert.Equal(t, uint64(1), root.Cid.Version())
@@ -125,7 +125,7 @@ func TestDags(t *testing.T) {
 
 	t.Run("dag root only", func(t *testing.T) {
 		buf, wr := bufWriter(t)
-		root, links, err := wr.BeginDAG(ctx, top, encSpec)
+		root, links, err := wr.BeginDAGNode(ctx, top, encSpec)
 		require.NoError(t, err)
 		assert.Equal(t, []cidlink.Link{leftLink, rightLink}, links)
 		require.NoError(t, wr.Finish())
@@ -141,18 +141,18 @@ func TestDags(t *testing.T) {
 	t.Run("simple dag", func(t *testing.T) {
 		buf, wr := bufWriter(t)
 
-		root, links, err := wr.BeginDAG(ctx, top, encSpec)
+		root, links, err := wr.BeginDAGNode(ctx, top, encSpec)
 		require.NoError(t, err)
 		assert.Equal(t, []cidlink.Link{leftLink, rightLink}, links)
 
 		{
-			lnk, links, err := wr.AppendBlock(ctx, leftLeaf, encSpec)
+			lnk, links, err := wr.AppendNode(ctx, leftLeaf, encSpec)
 			require.NoError(t, err)
 			assert.Equal(t, leftLink, lnk)
 			assert.Empty(t, links)
 		}
 		{
-			lnk, links, err := wr.AppendBlock(ctx, rightLeaf, encSpec)
+			lnk, links, err := wr.AppendNode(ctx, rightLeaf, encSpec)
 			require.NoError(t, err)
 			assert.Equal(t, rightLink, lnk)
 			assert.Empty(t, links)
