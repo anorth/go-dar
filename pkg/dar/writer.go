@@ -17,13 +17,10 @@ import (
 )
 
 // TODO:
-// - relax the unique-root check to allow declaration of roots that were written as non-roots
 // - wrap errors
 // - consider zippy or similar compression of the blocks.
 // - handle RAW CIDs: no block data or indirection
 // - spill allCids and blocksOffset to disk when too large for memory
-
-///// Writer
 
 // Writer writes IPLD blocks to an archive file.
 //
@@ -210,17 +207,21 @@ func (wr *Writer) appendBlock(ctx context.Context, block ipld.Node, enc cid.Pref
 		return cidlink.Link{}, nil, err
 	}
 
-	if err := wr.receiveBlockData(inLink.Cid, data, root); err != nil {
-		return cidlink.Link{}, nil, err
-	}
-
-	// Push links to children onto the stack.
-	outLinks, err := wr.pushLinks(block)
+	written, err := wr.receiveBlockData(inLink.Cid, data, root)
 	if err != nil {
 		return cidlink.Link{}, nil, err
 	}
 
-	return inLink, outLinks, nil
+	// Push links from a new block onto the stack.
+	if written {
+		outLinks, err := wr.pushLinks(block)
+		if err != nil {
+			return cidlink.Link{}, nil, err
+		}
+		return inLink, outLinks, nil
+	}
+
+	return inLink, nil, nil
 }
 
 func (wr *Writer) appendRawBlock(ctx context.Context, lnk cidlink.Link, data []byte, root bool) ([]cidlink.Link, error) {
@@ -229,28 +230,39 @@ func (wr *Writer) appendRawBlock(ctx context.Context, lnk cidlink.Link, data []b
 		return nil, err
 	}
 
-	if err := wr.receiveBlockData(lnk.Cid, data, root); err != nil {
-		return nil, err
-	}
-
-	// Push links to children onto the stack.
-	outLinks, err := wr.pushLinks(block)
+	written, err := wr.receiveBlockData(lnk.Cid, data, root)
 	if err != nil {
 		return nil, err
 	}
 
-	return outLinks, nil
+	// Push links from a new block onto the stack.
+	if written {
+		outLinks, err := wr.pushLinks(block)
+		if err != nil {
+			return nil, err
+		}
+		return outLinks, nil
+	}
+	return nil, nil
+
 }
 
-func (wr *Writer) receiveBlockData(c cid.Cid, data []byte, root bool) error {
-	// For root blocks, check uniqueness before writing (rather than write a pointer).
+// Writes block data to the stream, verifying depth-first order and de-duplicating
+// blocks already seen.
+// Returns whether the block was written (as opposed to skipped as a duplicate).
+func (wr *Writer) receiveBlockData(c cid.Cid, data []byte, root bool) (bool, error) {
+	// For root blocks, check uniqueness before writing.
 	if root {
-		// Require a new root to be distinct from any block already seen.
-		// Note that this rejects an attempt to define a block already written as a root of a new DAG.
-		// If the DAGs had been written in the opposite order, both could succeed (and the child DAG would be
-		// referenced from the parent DAG).
+		// Require a new root to be distinct from any other root.
+		// Note that this allows marking a block written previously (as a non-root) as a new root.
+		// This means that a DAG and sub-DAG may be written to the archive in either order, with the top-down
+		// approach saving a few bytes for the offset pointer.
 		if _, found := wr.offsets[c]; found {
-			return xerrors.Errorf("block %v proposed as root already written", c)
+			for _, root := range wr.roots {
+				if c == root {
+					return false, xerrors.Errorf("root %v already written", c)
+				}
+			}
 		}
 
 		// Record the root CID.
@@ -270,28 +282,28 @@ func (wr *Writer) receiveBlockData(c cid.Cid, data []byte, root bool) error {
 			}
 		}
 
-		// TODO: can we restore state so that an error here is recoverable?
+		// Note: It might be nice to restore state here so that an error is recoverable
 		if !found && len(wr.expectedBlocks) == 0 {
-			return xerrors.Errorf("unexpected cid %v in depth-first traversal, not linked from ancestor block", c)
+			return false, xerrors.Errorf("unexpected cid %v in depth-first traversal, not linked from ancestor block", c)
 		}
+	}
+
+	// If the block (and hence its sub-DAG) has already been written in this archive,
+	// insert a pointer to it and skip the block data.
+	if offset, found := wr.offsets[c]; found {
+		// Write the absolute offset at which the block is already written, negated.
+		_, err := wr.writeVarint(-offset)
+		return false, err // false whether or not there is an error.
 	}
 
 	// Write block data to the stream.
 	if err := wr.writeBlock(c, data); err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 func (wr *Writer) writeBlock(c cid.Cid, data []byte) error {
-	// If the block (and hence its sub-DAG) has already been written in this archive,
-	// insert a pointer to it.
-	if offset, found := wr.offsets[c]; found {
-		// Write the absolute offset at which the block is already written, negated.
-		_, err := wr.writeVarint(-offset)
-		return err
-	}
-
 	// Record the block CID and offset at which it will be written.
 	wr.allCids = append(wr.allCids, c)
 	wr.offsets[c] = wr.writer.bytesWritten

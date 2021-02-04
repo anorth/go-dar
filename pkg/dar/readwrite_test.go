@@ -21,6 +21,8 @@ import (
 // TODO:
 // - test raw nodes
 // - test DAG de-duping
+// - test DAG followed by sub-DAG
+// - test defining prior block as a root
 // - test iterating blocks
 // - test invalid writes: out-of-order, duplicate root
 

@@ -13,6 +13,13 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// TODO
+// - Add a stream-only reader function that does not require Seeker, traverses the archive just once
+
+// Reader reads IPLD blocks from an archive file.
+//
+// This reader requires a seekable stream. It reads the header and trailer up front and is then
+// capable of seeking to read a DAG from a root, or any indexed block (if an index is present).
 type Reader struct {
 	reader byteReadSeeker
 	closer io.Closer
