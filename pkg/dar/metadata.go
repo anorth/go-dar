@@ -9,8 +9,10 @@ import (
 )
 
 // DAR metadata object.
+// This is a placeholder for future information that might be placed in the archive/stream header,
+// such as the selector(s) which generated the DAG(s).
+// Serialized as a DAG-CBOR list ("representation tuple").
 type archiveMeta struct {
-	hasIndex bool
 }
 
 func (m *archiveMeta) Serialize(wr io.Writer) error {
@@ -35,11 +37,7 @@ func (m *archiveMeta) Deserialize(rd io.Reader) error {
 
 func (m *archiveMeta) ToNode() (ipld.Node, error) {
 	bld := basicnode.Prototype.List.NewBuilder()
-	listAssembler, err := bld.BeginList(1)
-	if err != nil {
-		return nil, err
-	}
-	err = listAssembler.AssembleValue().AssignBool(m.hasIndex)
+	listAssembler, err := bld.BeginList(0)
 	if err != nil {
 		return nil, err
 	}
@@ -50,14 +48,6 @@ func (m *archiveMeta) ToNode() (ipld.Node, error) {
 	return bld.Build(), nil
 }
 
-func (m *archiveMeta) FromNode(node ipld.Node) error {
-	hasIndexNode, err := node.LookupByIndex(0)
-	if err != nil {
-		return err
-	}
-	m.hasIndex, err = hasIndexNode.AsBool()
-	if err != nil {
-		return err
-	}
+func (m *archiveMeta) FromNode(_ ipld.Node) error {
 	return nil
 }

@@ -17,9 +17,9 @@ import (
 )
 
 // TODO:
-// - remove the index indicator from metadata, just use the trailer offset
 // - relax the unique-root check to allow declaration of roots that were written as non-roots
 // - wrap errors
+// - consider zippy or similar compression of the blocks.
 // - handle RAW CIDs: no block data or indirection
 // - spill allCids and blocksOffset to disk when too large for memory
 
@@ -197,7 +197,7 @@ func (wr *Writer) writeHeader() error {
 	}
 
 	// Write metadata object as DAG-CBOR
-	meta := archiveMeta{hasIndex: wr.makeIndex}
+	meta := archiveMeta{}
 	if err := meta.Serialize(&wr.writer); err != nil {
 		return err
 	}

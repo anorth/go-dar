@@ -17,7 +17,6 @@ type Reader struct {
 	reader byteReadSeeker
 	closer io.Closer
 
-	hasIndex      bool
 	blocksOffset  int64
 	indexOffset   int64
 	trailerOffset int64
@@ -73,7 +72,7 @@ func NewReader(r io.ReadSeeker) (*Reader, error) {
 }
 
 func (rd *Reader) HasIndex() bool {
-	return rd.hasIndex
+	return rd.indexOffset > 0
 }
 
 // Iterates the roots of this archive in the order they were written, passing each in turn to a callback.
@@ -132,8 +131,6 @@ func (rd *Reader) readHeader() error {
 	if err := meta.Deserialize(rd.reader); err != nil {
 		return err
 	}
-	rd.hasIndex = meta.hasIndex
-
 	return nil
 }
 
@@ -155,7 +152,6 @@ func (rd *Reader) readTrailer() error {
 	if rd.indexOffset, err = rd.readInt64(); err != nil {
 		return err
 	}
-	rd.hasIndex = rd.indexOffset > 0
 
 	// Read trailer section offset
 	if rd.trailerOffset, err = rd.readInt64(); err != nil {
