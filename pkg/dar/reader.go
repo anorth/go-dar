@@ -1,7 +1,6 @@
 package dar
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -9,12 +8,13 @@ import (
 	"os"
 
 	"github.com/ipfs/go-cid"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 )
 
 type Reader struct {
-	reader io.ReadSeeker
+	reader byteReadSeeker
 	closer io.Closer
 
 	hasIndex      bool
@@ -43,9 +43,10 @@ func NewFileReader(path string) (*Reader, error) {
 
 // Initializes an archive reader with a stream, reading the header and trailer.
 func NewReader(r io.ReadSeeker) (*Reader, error) {
-	rd := &Reader{}
+	rd := &Reader{
+		reader: byteReadSeeker{r},
+	}
 
-	rd.reader = r
 	// Read header
 	buf := make([]byte, len(magic))
 	_, err := io.ReadFull(rd.reader, buf)
@@ -71,9 +72,13 @@ func NewReader(r io.ReadSeeker) (*Reader, error) {
 	return rd, nil
 }
 
+func (rd *Reader) HasIndex() bool {
+	return rd.hasIndex
+}
+
 // Iterates the roots of this archive in the order they were written, passing each in turn to a callback.
 // If the callback returns an error, iteration halts and that error is propagated from this method.
-func (rd *Reader) IterRoots(cb func(cid cid.Cid) error) error {
+func (rd *Reader) IterRoots(cb func(c cidlink.Link) error) error {
 	// Seek to start of the trailer, where the roots are.
 	if _, err := rd.reader.Seek(rd.trailerOffset, io.SeekStart); err != nil {
 		return err
@@ -97,11 +102,22 @@ func (rd *Reader) IterRoots(cb func(cid cid.Cid) error) error {
 		// TODO: return a block iterator
 		_ = offset
 
-		if err := cb(c); err != nil {
+		if err := cb(cidlink.Link{Cid: c}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (rd *Reader) Roots() ([]cidlink.Link, error) {
+	var roots []cidlink.Link
+	if err := rd.IterRoots(func(c cidlink.Link) error {
+		roots = append(roots, c)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return roots, nil
 }
 
 func (rd *Reader) Close() error {
@@ -139,6 +155,7 @@ func (rd *Reader) readTrailer() error {
 	if rd.indexOffset, err = rd.readInt64(); err != nil {
 		return err
 	}
+	rd.hasIndex = rd.indexOffset > 0
 
 	// Read trailer section offset
 	if rd.trailerOffset, err = rd.readInt64(); err != nil {
@@ -152,7 +169,7 @@ func (rd *Reader) readTrailer() error {
 
 // Reads a varint from the stream.
 func (rd *Reader) readVarint() (int64, error) {
-	return binary.ReadVarint(bufio.NewReader(rd.reader))
+	return binary.ReadVarint(rd.reader)
 }
 
 // Reads an int64 from the stream (always 8 bytes).
@@ -181,10 +198,8 @@ func (rd *Reader) readCID() (cid.Cid, error) {
 		}
 	}
 
-	byteReader := bufio.NewReader(rd.reader)
-
 	// assume cidv1
-	vers, err := binary.ReadUvarint(byteReader)
+	vers, err := binary.ReadUvarint(rd.reader)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -193,16 +208,31 @@ func (rd *Reader) readCID() (cid.Cid, error) {
 	if vers != 1 {
 		return cid.Undef, fmt.Errorf("invalid cid version number")
 	}
-	codec, err := binary.ReadUvarint(byteReader)
+	codec, err := binary.ReadUvarint(rd.reader)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	mhr := multihash.NewReader(byteReader)
+	mhr := multihash.NewReader(rd.reader)
 	h, err := mhr.ReadMultihash()
 	if err != nil {
 		return cid.Cid{}, err
 	}
 
 	return cid.NewCidV1(codec, h), nil
+}
+
+// Extends a ReadSeeker to ByteReader.
+// Note that these reads are all unbuffered. It may be advantageous to add buffering here,
+// like bufio.NewReader, but also handling seeks.
+type byteReadSeeker struct {
+	io.ReadSeeker
+}
+
+func (r byteReadSeeker) ReadByte() (byte, error) {
+	var buf [1]byte
+	if _, err := io.ReadFull(r, buf[:]); err != nil {
+		return 0, err
+	}
+	return buf[0], nil
 }

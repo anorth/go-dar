@@ -17,6 +17,8 @@ import (
 )
 
 // TODO:
+// - remove the index indicator from metadata, just use the trailer offset
+// - relax the unique-root check to allow declaration of roots that were written as non-roots
 // - wrap errors
 // - handle RAW CIDs: no block data or indirection
 // - spill allCids and blocksOffset to disk when too large for memory
@@ -118,9 +120,6 @@ func (wr *Writer) BeginDAG(ctx context.Context, rootBlock ipld.Node, enc cid.Pre
 	if err != nil {
 		return cidlink.Link{}, nil, err
 	}
-
-	// Empty the stack of expected blocks from the prior DAG (if any).
-	wr.expectedBlocks = nil
 
 	return link, links, nil
 }
@@ -256,21 +255,25 @@ func (wr *Writer) receiveBlockData(c cid.Cid, data []byte, root bool) error {
 
 		// Record the root CID.
 		wr.roots = append(wr.roots, c)
-	}
 
-	// Pop expected blocks from the stack until we find this one.
-	for len(wr.expectedBlocks) > 0 {
-		top := len(wr.expectedBlocks) - 1
-		popped := wr.expectedBlocks[top]
-		wr.expectedBlocks = wr.expectedBlocks[:top]
-		if popped.Cid == c {
-			break
+		// Empty the stack of expected blocks from the prior DAG (if any).
+		wr.expectedBlocks = nil
+	} else {
+		// Pop expected blocks from the stack until we find this one.
+		found := false
+		for !found && len(wr.expectedBlocks) > 0 {
+			top := len(wr.expectedBlocks) - 1
+			popped := wr.expectedBlocks[top]
+			wr.expectedBlocks = wr.expectedBlocks[:top]
+			if popped.Cid == c {
+				found = true
+			}
 		}
-	}
 
-	// TODO: can we restore state so that an error here is recoverable?
-	if len(wr.expectedBlocks) == 0 {
-		return xerrors.Errorf("unexpected cid %v in depth-first traversal, not linked from ancestor block", c)
+		// TODO: can we restore state so that an error here is recoverable?
+		if !found && len(wr.expectedBlocks) == 0 {
+			return xerrors.Errorf("unexpected cid %v in depth-first traversal, not linked from ancestor block", c)
+		}
 	}
 
 	// Write block data to the stream.
@@ -439,12 +442,9 @@ type countingWriter struct {
 
 // Writes bytes to the underlying stream and updates the count of bytes written.
 func (c *countingWriter) Write(bs []byte) (n int, err error) {
-	if n, err := c.underlying.Write(bs); err != nil {
-		return 0, err
-	} else {
-		c.bytesWritten = c.bytesWritten + int64(n)
-	}
-	return n, err
+	n, err = c.underlying.Write(bs)
+	c.bytesWritten = c.bytesWritten + int64(n)
+	return
 }
 
 var nilCommitter ipld.StoreCommitter = func(link ipld.Link) error { return nil }
