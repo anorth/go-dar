@@ -14,6 +14,7 @@ import (
 )
 
 // TODO
+// - Support quick access to many more roots (e.g. 10k msgroots or stateroots) by loading them into memory
 // - Add a stream-only reader function that does not require Seeker, traverses the archive just once
 // - Consider a breadth-first traversal option, that could be better for tipset-blockchains like Filecoin
 

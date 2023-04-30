@@ -17,7 +17,11 @@ import (
 )
 
 // TODO:
+// - Consider changing the traversal order to be breadth-first; write all children before descending
+//   into them in order (current: descend into each child immediately after writing it).
 // - wrap errors
+// - add built-in traversal method reading a DAG from a blockstore, with inclusion predicate
+// - add an option to reject dangling links
 // - consider zippy or similar compression of the blocks.
 // - handle RAW CIDs: no block data or indirection
 // - spill allCids and blocksOffset to disk when too large for memory
@@ -198,8 +202,9 @@ func (wr *Writer) checkOpen() error {
 //
 
 func (wr *Writer) writeHeader() error {
-	// TODO: consider moving this magic inside the DAG-CBOR object, as first element in the list.
-	// Write magic bytes for sniffing.
+	// Write magic bytes for content-type sniffing.
+	// Don't move this magic inside the metadata object, otherwise the file will start with
+	// an unstable varint.
 	_, err := wr.writer.Write([]byte(magic))
 	if err != nil {
 		return err
